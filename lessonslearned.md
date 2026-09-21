@@ -1,25 +1,72 @@
-# Lessons Learned: Global Web App with Multi-Region EC2 Deployment
+# Lessons Learned
 
-## What Went Well
-- Successfully used Terraform to provision a global infrastructure footprint.
-- Used separate providers and aliases to manage multiple AWS regions clearly.
-- Applied subnet naming consistency across regions (Area 1 and Area 2).
-- IAM instance profile for SSM access was a great addition to eliminate SSH dependency.
-- Used modular security group design, separating each region’s EC2 ingress/egress.
-- Integrated user_data for EC2 bootstrapping (NGINX setup) without needing manual login.
+## Multi-Region Deployment Is Not Global Traffic Management
 
-## Challenges Encountered
-- CIDR block overlaps required careful planning during subnet setup.
-- Availability Zone selection needed manual cross-checking to ensure isolation.
-- Terraform didn’t support dynamic AZ retrieval without a data source or variable logic.
-- Terraform AWS provider must match region-specific resource placement strictly.
+Deploying the same workload in multiple AWS regions creates a multi-region infrastructure footprint, but it does not automatically provide global routing, regional failover, or high availability.
 
-## Improvements for Future
-- Add modules to encapsulate repeated logic (e.g., VPC, EC2, SG).
-- Use `terraform remote state` to split regions into reusable workspaces.
-- Add variableized IP whitelisting for SSH (`YOUR_IP/32` should be parameterized).
-- Include CloudWatch alarms or logging for deeper observability.
-- Consider load balancer integration to enable failover between regions.
+Those capabilities require additional services and design decisions such as DNS routing, health checks, load balancing, CDN or edge services, and automated failover.
+
+This distinction became one of the most important architectural lessons from the project.
+
+## Regional Infrastructure Must Be Independently Complete
+
+Each AWS region requires the networking components necessary to support the workload.
+
+For this project, that includes:
+
+- VPC
+- Public subnet
+- Internet Gateway
+- Route table and default route
+- Security group
+- EC2 instance
+
+Creating an EC2 instance and subnet alone does not make the workload internet accessible.
+
+## Provider Aliases Simplify Multi-Region Terraform
+
+Terraform provider aliases allow resources in multiple AWS regions to be managed from the same configuration.
+
+This makes the regional relationship visible while avoiding separate Terraform projects for infrastructure that follows the same architecture pattern.
+
+## Avoid Hard-Coded Regional AMI IDs
+
+AMI identifiers are regional.
+
+Using Terraform data sources to discover the appropriate Amazon Linux 2023 AMI in each region makes the configuration more portable and reduces dependence on manually maintained AMI IDs.
+
+## Administrative Access Does Not Require SSH
+
+The original design considered SSH access, but the final architecture leaves inbound SSH closed.
+
+Using an EC2 IAM role and Systems Manager permissions provides a stronger administrative-access pattern without exposing TCP port 22 to the internet.
+
+## Infrastructure Documentation Must Match the Code
+
+Architecture documentation should describe what is actually implemented.
+
+Services such as CloudFront, Route 53, WAF, TLS termination, CloudWatch monitoring, and automatic failover may be reasonable production extensions, but they should not be presented as implemented controls when they are not part of the Terraform.
+
+Keeping documentation aligned with Infrastructure as Code makes the repository more useful for architecture reviews and prevents design intent from being confused with deployed capability.
+
+## Future Improvements
+
+A production evolution of this architecture could evaluate:
+
+- Route 53 health-aware or latency-based routing
+- CloudFront or AWS Global Accelerator
+- Regional load balancers and Auto Scaling
+- TLS using AWS Certificate Manager
+- AWS WAF
+- Centralized logging, metrics, and alerting
+- Multi-AZ deployment within each region
+- Automated regional failover
+- Data replication and recovery requirements
+
+Each addition should be driven by availability, security, performance, recovery, and cost requirements rather than added simply because the service is available.
 
 ## Key Takeaway
-Manual subnet/VPC creation in the AWS Console is helpful for validation but ideally avoided in infrastructure-as-code projects. From now on, full automation (including subnet CIDRs and tags) should be implemented in Terraform for portability and version control.
+
+The strongest lesson from this project is that architecture should clearly separate **what is deployed today** from **what would be required for a production target state**.
+
+Terraform provides the repeatable regional foundation. Global resilience requires additional architectural layers.
