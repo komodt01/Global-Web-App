@@ -1,96 +1,205 @@
-# Global Web App Terraform Deployment
+# AWS Multi-Region Web Application Architecture
 
-Purpose
-This project deploys a simple globally distributed web application across two AWS regions using Terraform.
-It is designed as an architecture and operations lab, not a production workload.
+## Project Purpose
 
-What This Project Deploys
+This project demonstrates how a simple web workload can be deployed consistently across multiple AWS regions using Terraform.
 
-Two VPCs (one in us-east-1, one in ap-southeast-1)
+The architecture deploys independent NGINX web servers in:
 
-Public subnets and Internet Gateways in each region
+- `us-east-1` — primary region
+- `ap-southeast-1` — secondary region
 
-EC2 instances running NGINX as a basic web server
+Each region receives its own VPC, public subnet, Internet Gateway, route table, security group, and EC2 web server.
 
-Security Groups that allow HTTPS and restricted SSH
+The project focuses on **multi-region infrastructure design, repeatable deployment, network isolation, and administrative access** rather than implementing a production global traffic-management platform.
 
-Optional SSM access for secure remote administration (if enabled in the Terraform variables)
+---
 
-Architecture Overview
-Area 1: us-east-1
+## Architecture
 
-VPC with a public subnet
+The Terraform configuration creates two independent regional environments.
 
-NGINX EC2 instance
+### Primary Region — us-east-1
 
-Internet-facing access over HTTPS
+- VPC: `10.0.0.0/16`
+- Public subnet: `10.0.1.0/24`
+- Internet Gateway
+- Public route table
+- EC2 security group
+- Amazon Linux 2023 EC2 instance
+- NGINX web server
 
-Area 2: ap-southeast-1
+### Secondary Region — ap-southeast-1
 
-VPC with a public subnet
+- VPC: `10.1.0.0/16`
+- Public subnet: `10.1.1.0/24`
+- Internet Gateway
+- Public route table
+- EC2 security group
+- Amazon Linux 2023 EC2 instance
+- NGINX web server
 
-NGINX EC2 instance
+Terraform uses separate AWS provider aliases to manage resources in both regions from one configuration.
 
-Internet-facing access over HTTPS
+---
 
-The two regions are independent in this version.
-Global behavior is achieved by deploying the same web tier in multiple regions, not by using a global load balancer.
+## Request Flow
 
-Prerequisites
+The current lab exposes each regional web server independently.
 
-AWS account with permissions to create VPCs, EC2, Security Groups, IAM roles, and SSM (if used)
+```text
+User
+  |
+  +----> Public IP — us-east-1 EC2 — NGINX
+  |
+  +----> Public IP — ap-southeast-1 EC2 — NGINX
+```
 
-Terraform installed
+The two environments do not automatically route traffic between regions.
 
-AWS CLI configured with valid credentials or profile
+A production implementation could introduce services such as Route 53, CloudFront, Global Accelerator, load balancers, health checks, and automated failover depending on business and availability requirements.
 
-Optional: key pair or SSM access to log in to the EC2 instances
+Those services are intentionally outside the implemented scope of this lab.
 
-Deployment Steps
+---
 
-Navigate into the project folder.
+## Security and Administrative Controls
 
-Review and update terraform.tfvars or variable values as needed.
+### Network Separation
 
-Run:
+Each region uses its own VPC and CIDR range. This provides clear regional network boundaries and avoids overlapping address space between the two environments.
+
+### Security Groups
+
+The web security groups permit inbound HTTP traffic on TCP port 80.
+
+The lab does not expose SSH for administration.
+
+### AWS Systems Manager
+
+Both EC2 instances use an IAM instance profile with the AWS-managed `AmazonSSMManagedInstanceCore` policy.
+
+This establishes the identity foundation for Systems Manager-based administration rather than requiring inbound SSH access.
+
+### Dynamic AMI Selection
+
+Terraform queries AWS for the current Amazon Linux 2023 AMI independently in each region rather than relying on a single hard-coded AMI ID.
+
+This avoids assuming that an AMI identifier is valid across regions.
+
+---
+
+## Infrastructure as Code
+
+All deployable infrastructure is maintained under:
+
+```text
+terraform/
+├── main.tf
+└── variables.tf
+```
+
+`main.tf` contains the AWS providers, IAM resources, networking, EC2 instances, bootstrap configuration, and outputs.
+
+`variables.tf` defines the primary region, secondary region, and EC2 instance type.
+
+Keeping the Terraform configuration together prevents separate directories from unintentionally representing different infrastructure states.
+
+---
+
+## Deployment
+
+From the repository root:
+
+```bash
+cd terraform
 terraform init
+terraform validate
 terraform plan
 terraform apply
+```
 
-Outputs
-After apply completes, Terraform returns:
+Terraform provisions both regional environments from the same configuration.
 
-area1_public_ip (EC2 public IP in us-east-1)
+After deployment, the outputs provide the public IP address of each web server:
 
-area2_public_ip (EC2 public IP in ap-southeast-1)
+```text
+primary_public_ip
+secondary_public_ip
+```
 
-You can use these IPs in a browser to confirm that NGINX is serving the web page from each region.
+Opening either address over HTTP should return a simple NGINX page identifying the AWS region serving the request.
 
-Teardown
-To destroy all resources created by this deployment, run:
+---
+
+## Teardown
+
+From the `terraform` directory:
+
+```bash
 terraform destroy
+```
 
-For full cleanup guidance and notes, see teardown.md.
+Review the Terraform plan before confirming destruction.
 
-Documentation
-Additional project documentation is included:
+See `teardown.md` for additional cleanup guidance.
 
-project_summary.md
+---
 
-design_overview.md
+## Architecture Decisions
 
-security_requirements.md
+### Why Two Independent VPCs?
 
-risks_and_mitigations.md
+The purpose of the lab is to demonstrate regional infrastructure independence. Each region can be provisioned and operated without depending on the network resources of the other region.
 
-cost_estimate_disclaimer.md
+### Why Systems Manager Instead of SSH?
 
-costmodeling.md
+Removing inbound SSH reduces unnecessary administrative exposure. Systems Manager provides an AWS-managed approach for administering EC2 instances using IAM-based access.
 
-compliance_mapping.md
+### Why No Global Routing Layer?
 
-technologies.md
+Deploying infrastructure in multiple regions and globally routing users are separate architectural concerns.
 
-lessonslearned.md
+This project intentionally demonstrates the **regional infrastructure layer**. DNS routing, CDN services, health-based failover, TLS termination, WAF protection, and global traffic management would be additional architecture decisions rather than implied capabilities of the current implementation.
 
-This project is intended for learning, portfolio, and architecture discussion purposes only and is not a production-ready design.
+---
+
+## Current Scope
+
+Implemented:
+
+- Multi-region AWS provider configuration
+- Two independent VPCs
+- Two public subnets
+- Internet Gateways and public routing
+- Regional security groups
+- Two Amazon Linux 2023 EC2 instances
+- NGINX bootstrap using EC2 user data
+- IAM role and instance profile for Systems Manager
+- Dynamic regional AMI discovery
+- Terraform outputs for both regional web servers
+
+Not implemented:
+
+- Route 53 latency or failover routing
+- CloudFront
+- AWS Global Accelerator
+- Application or Network Load Balancers
+- AWS WAF
+- TLS certificates or HTTPS termination
+- Automated regional failover
+- Multi-AZ web tiers
+- Auto Scaling
+- Centralized application logging or alerting
+
+These distinctions are intentional so the repository accurately represents the infrastructure implemented by the Terraform.
+
+---
+
+## What This Project Demonstrates
+
+This project demonstrates the architectural difference between **deploying a workload in multiple AWS regions** and building a fully managed **global application delivery architecture**.
+
+The Terraform establishes repeatable regional infrastructure and administrative controls while leaving global traffic management, resilience automation, and edge security as explicit future architecture decisions.
+
+That separation is important in enterprise architecture: multi-region deployment creates the infrastructure footprint, but additional controls are required before that footprint becomes a production-grade global service.
