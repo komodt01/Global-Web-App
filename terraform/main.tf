@@ -29,7 +29,12 @@ provider "aws" {
 
 # Shared EC2 role used by instances in both regions for
 # AWS Systems Manager administration.
+# IAM resources are managed through the configured primary
+# AWS provider while remaining account-level IAM resources.
+
 resource "aws_iam_role" "ec2_ssm_role" {
+  provider = aws.primary
+
   name = "global-web-app-ec2-ssm-role"
 
   assume_role_policy = jsonencode({
@@ -49,11 +54,15 @@ resource "aws_iam_role" "ec2_ssm_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "ec2_ssm_attach" {
+  provider = aws.primary
+
   role       = aws_iam_role.ec2_ssm_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "ec2_ssm_profile" {
+  provider = aws.primary
+
   name = "global-web-app-ec2-ssm-profile"
   role = aws_iam_role.ec2_ssm_role.name
 }
