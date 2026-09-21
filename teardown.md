@@ -1,9 +1,10 @@
 # Teardown Instructions
 
-To clean up all resources created by this Terraform configuration:
+The Terraform configuration for this project is located in the `terraform/` directory.
+
+From the repository root:
 
 ```bash
+cd terraform
+terraform plan -destroy
 terraform destroy
-```
-
-Ensure you are in the correct working directory where `main.tf` resides.
